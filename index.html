@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aurisbridge | Web Audio</title>
+    <title>AurisBridge | Web Audio</title>
     <style>
         :root {
             --bg-color: #121212;
@@ -83,8 +83,8 @@
 </head>
 <body>
 
-    <h1>Aurisbridge</h1>
-    <p>Plug in wired headphones for zero lag.</p>
+    <h1>AurisBridge</h1>
+    <p>Plug in wired headphones for minimum latency.</p>
 
     <div class="controls-card">
         <label for="micSelect" class="slider-label">Select Microphone:</label>
@@ -147,7 +147,7 @@
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     audio: { 
                         deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
-                        echoCancellation: false, 
+                        echoCancellation: true, 
                         noiseSuppression: false, 
                         autoGainControl: false,
                         latency: 0 
