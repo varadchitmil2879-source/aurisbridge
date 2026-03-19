@@ -10,6 +10,7 @@
             --text-main: #ffffff;
             --accent: #ffb74d;
             --stop-color: #ef5350;
+            --card-bg: #1e1e1e;
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -19,16 +20,39 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             padding: 20px;
             box-sizing: border-box;
             text-align: center;
         }
-        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 10px; }
-        p { color: #a0a0a0; margin-bottom: 40px; font-size: 1.1rem; }
+        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 5px; }
+        p { color: #a0a0a0; margin-bottom: 30px; font-size: 1.1rem; }
         
-        /* Massive touch target for seniors */
+        /* Device Selector Styling */
+        .controls-card {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 30px;
+            box-sizing: border-box;
+        }
+
+        select {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            font-size: 1rem;
+        }
+
+        /* Massive touch target */
         #toggleBtn {
             background-color: var(--accent);
             color: #000;
@@ -41,17 +65,15 @@
             font-weight: bold;
             cursor: pointer;
             transition: background-color 0.3s;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
         }
         #toggleBtn.active {
             background-color: var(--stop-color);
             color: white;
         }
 
-        .slider-container { width: 100%; max-width: 400px; }
         .slider-label { font-size: 1.2rem; margin-bottom: 15px; display: block; }
         
-        /* Large slider for accessibility */
         input[type=range] {
             width: 100%;
             height: 40px;
@@ -62,14 +84,19 @@
 <body>
 
     <h1>Aurisbridge</h1>
-    <p>Plug in wired headphones for the best experience.</p>
+    <p>Plug in wired headphones for zero lag.</p>
 
-    <button id="toggleBtn">START LISTENING</button>
+    <div class="controls-card">
+        <label for="micSelect" class="slider-label">Select Microphone:</label>
+        <select id="micSelect">
+            <option value="">Loading microphones...</option>
+        </select>
 
-    <div class="slider-container">
-        <span class="slider-label">Clarity Boost (High Frequencies)</span>
+        <span class="slider-label" style="margin-top: 20px;">Clarity Boost</span>
         <input type="range" id="claritySlider" min="0" max="25" value="12">
     </div>
+
+    <button id="toggleBtn">START LISTENING</button>
 
     <script>
         let audioContext;
@@ -81,15 +108,45 @@
 
         const toggleBtn = document.getElementById('toggleBtn');
         const claritySlider = document.getElementById('claritySlider');
+        const micSelect = document.getElementById('micSelect');
 
-        // Feature detection for Wake Lock
-        const canWakeLock = 'wakeLock' in navigator;
+        // Populate the dropdown with available microphones
+        async function loadMicrophones() {
+            try {
+                // Browsers hide device names until permission is granted once. 
+                // We ask for permission silently first, then grab the list.
+                const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                
+                micSelect.innerHTML = ''; // Clear the "Loading..." text
+                
+                const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                
+                audioInputs.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    // If label is missing, give it a generic name
+                    option.text = device.label || `Microphone ${index + 1}`; 
+                    micSelect.appendChild(option);
+                });
+
+                // Stop the temporary stream so the mic light turns off
+                tempStream.getTracks().forEach(track => track.stop());
+
+            } catch (err) {
+                micSelect.innerHTML = '<option value="">Microphone access blocked</option>';
+                console.error("Error loading mics:", err);
+            }
+        }
 
         async function startAudio() {
             try {
-                // 1. Get Microphone Access (Requesting lowest latency possible)
+                // Grab the exact device ID the user selected from the dropdown
+                const selectedDeviceId = micSelect.value;
+                
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     audio: { 
+                        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
                         echoCancellation: false, 
                         noiseSuppression: false, 
                         autoGainControl: false,
@@ -97,64 +154,56 @@
                     } 
                 });
 
-                // 2. Initialize Web Audio API
                 audioContext = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
                 microphone = audioContext.createMediaStreamSource(stream);
 
-                // 3. Create the High-Frequency Biquad Filter (Clarity)
                 highShelfFilter = audioContext.createBiquadFilter();
                 highShelfFilter.type = 'highshelf';
-                highShelfFilter.frequency.value = 2500; // Boost starts at 2500Hz
-                highShelfFilter.gain.value = claritySlider.value; // Connect to slider
+                highShelfFilter.frequency.value = 2500;
+                highShelfFilter.gain.value = claritySlider.value;
 
-                // 4. Create the Safety Limiter (Compressor)
                 safetyLimiter = audioContext.createDynamicsCompressor();
-                safetyLimiter.threshold.value = -5; // Kick in near max volume
+                safetyLimiter.threshold.value = -5;
                 safetyLimiter.knee.value = 0;
-                safetyLimiter.ratio.value = 20; // Squash loud sounds hard
-                safetyLimiter.attack.value = 0.001; // React instantly (1ms)
+                safetyLimiter.ratio.value = 20;
+                safetyLimiter.attack.value = 0.001;
                 safetyLimiter.release.value = 0.1;
 
-                // 5. Connect the audio graph: Mic -> Filter -> Limiter -> Headphones
                 microphone.connect(highShelfFilter);
                 highShelfFilter.connect(safetyLimiter);
                 safetyLimiter.connect(audioContext.destination);
 
-                // 6. Keep the screen awake
-                if (canWakeLock) {
-                    try {
-                        wakeLock = await navigator.wakeLock.request('screen');
-                    } catch (err) {
-                        console.log("Wake Lock failed:", err);
-                    }
+                if ('wakeLock' in navigator) {
+                    try { wakeLock = await navigator.wakeLock.request('screen'); } 
+                    catch (err) { console.log("Wake Lock failed:", err); }
                 }
 
-                // Update UI
                 isListening = true;
                 toggleBtn.textContent = "STOP LISTENING";
                 toggleBtn.classList.add("active");
+                micSelect.disabled = true; // Prevent changing mic while active
 
             } catch (err) {
-                alert("Microphone access denied or failed. Please check browser permissions.");
+                alert("Could not start audio. Please check permissions.");
                 console.error(err);
             }
         }
 
         function stopAudio() {
             if (audioContext) {
-                audioContext.close(); // Shut down the audio engine
+                audioContext.close();
             }
             if (wakeLock !== null) {
-                wakeLock.release(); // Let the screen sleep again
+                wakeLock.release();
                 wakeLock = null;
             }
             
             isListening = false;
             toggleBtn.textContent = "START LISTENING";
             toggleBtn.classList.remove("active");
+            micSelect.disabled = false; // Re-enable dropdown
         }
 
-        // Button Click Event
         toggleBtn.addEventListener('click', () => {
             if (!isListening) {
                 startAudio();
@@ -163,12 +212,14 @@
             }
         });
 
-        // Slider Change Event (Updates the filter in real-time)
         claritySlider.addEventListener('input', (event) => {
             if (highShelfFilter) {
                 highShelfFilter.gain.value = event.target.value;
             }
         });
+
+        // Run this function immediately when the page loads
+        window.addEventListener('load', loadMicrophones);
     </script>
 </body>
 </html>
