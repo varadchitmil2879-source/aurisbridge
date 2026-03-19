@@ -3,126 +3,172 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AurisBridge | Clearer Audio, Zero Lag</title>
+    <title>Aurisbridge | Web Audio</title>
     <style>
-        /* Modern, accessible dark theme */
         :root {
             --bg-color: #121212;
             --text-main: #ffffff;
-            --text-muted: #a0a0a0;
-            --accent: #ffb74d; /* High contrast amber/orange */
-            --card-bg: #1e1e1e;
+            --accent: #ffb74d;
+            --stop-color: #ef5350;
         }
-
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-main);
-            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
             margin: 0;
-            padding: 0;
-        }
-
-        header {
+            padding: 20px;
+            box-sizing: border-box;
             text-align: center;
-            padding: 4rem 1rem;
-            background: linear-gradient(180deg, #2c2c2c 0%, var(--bg-color) 100%);
         }
-
-        h1 {
-            font-size: 3rem;
-            margin-bottom: 0.5rem;
-            color: var(--accent);
-        }
-
-        p.subtitle {
-            font-size: 1.25rem;
-            color: var(--text-muted);
-            max-width: 600px;
-            margin: 0 auto 2rem auto;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem 1rem;
-        }
-
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1.5rem;
-            margin-top: 2rem;
-        }
-
-        .feature-card {
-            background-color: var(--card-bg);
-            padding: 1.5rem;
-            border-radius: 8px;
-            border-left: 4px solid var(--accent);
-        }
-
-        .feature-card h3 {
-            margin-top: 0;
-        }
-
-        .cta-button {
-            display: inline-block;
+        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 10px; }
+        p { color: #a0a0a0; margin-bottom: 40px; font-size: 1.1rem; }
+        
+        /* Massive touch target for seniors */
+        #toggleBtn {
             background-color: var(--accent);
             color: #000;
-            padding: 1rem 2rem;
-            font-size: 1.1rem;
+            border: none;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 400px;
+            height: 120px;
+            font-size: 1.8rem;
             font-weight: bold;
-            text-decoration: none;
-            border-radius: 50px;
-            transition: transform 0.2s ease;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-bottom: 40px;
+        }
+        #toggleBtn.active {
+            background-color: var(--stop-color);
+            color: white;
         }
 
-        .cta-button:hover {
-            transform: translateY(-2px);
-        }
-
-        footer {
-            text-align: center;
-            padding: 2rem;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            margin-top: 4rem;
-            border-top: 1px solid #333;
+        .slider-container { width: 100%; max-width: 400px; }
+        .slider-label { font-size: 1.2rem; margin-bottom: 15px; display: block; }
+        
+        /* Large slider for accessibility */
+        input[type=range] {
+            width: 100%;
+            height: 40px;
+            accent-color: var(--accent);
         }
     </style>
 </head>
 <body>
 
-    <header>
-        <h1>AurisBridge</h1>
-        <p class="subtitle">An open-source, ultra-low latency Android app designed to turn everyday smartphones into powerful live-listen accessibility tools.</p>
-       <a href="https://github.com/varadchitmil2879-source/aurisbridge" class="cta-button" target="_blank">View on GitHub</a>
-    </header>
+    <h1>Aurisbridge</h1>
+    <p>Plug in wired headphones for the best experience.</p>
 
-    <div class="container">
-        <h2>Why Aurisbridge?</h2>
-        <p>Standard Bluetooth audio creates a disorienting echo for hearing aid apps due to high latency. Aurisbridge bypasses standard audio paths using C++ native libraries to deliver real-time sound to True Wireless Stereo (TWS) earbuds.</p>
+    <button id="toggleBtn">START LISTENING</button>
 
-        <div class="features">
-            <div class="feature-card">
-                <h3>⚡ Zero Echo</h3>
-                <p>Powered by Google's Oboe C++ library, achieving sub-30ms round-trip latency to eliminate the "delayed auditory feedback" effect.</p>
-            </div>
-            <div class="feature-card">
-                <h3>🎛️ Clarity Boost</h3>
-                <p>Custom digital signal processing (DSP) biquad filters specifically designed to boost the high frequencies (2kHz - 8kHz) commonly lost in age-related hearing loss.</p>
-            </div>
-            <div class="feature-card">
-                <h3>📱 Senior-Friendly UI</h3>
-                <p>Designed with extreme accessibility in mind: massive touch targets, high-contrast colors, and zero complicated equalizer sliders.</p>
-            </div>
-        </div>
+    <div class="slider-container">
+        <span class="slider-label">Clarity Boost (High Frequencies)</span>
+        <input type="range" id="claritySlider" min="0" max="25" value="12">
     </div>
 
-    <footer>
-        <p>Built with care. This is an open-source accessibility project and does not replace medical hearing aids.</p>
-    </footer>
+    <script>
+        let audioContext;
+        let microphone;
+        let highShelfFilter;
+        let safetyLimiter;
+        let isListening = false;
+        let wakeLock = null;
 
+        const toggleBtn = document.getElementById('toggleBtn');
+        const claritySlider = document.getElementById('claritySlider');
+
+        // Feature detection for Wake Lock
+        const canWakeLock = 'wakeLock' in navigator;
+
+        async function startAudio() {
+            try {
+                // 1. Get Microphone Access (Requesting lowest latency possible)
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { 
+                        echoCancellation: false, 
+                        noiseSuppression: false, 
+                        autoGainControl: false,
+                        latency: 0 
+                    } 
+                });
+
+                // 2. Initialize Web Audio API
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+                microphone = audioContext.createMediaStreamSource(stream);
+
+                // 3. Create the High-Frequency Biquad Filter (Clarity)
+                highShelfFilter = audioContext.createBiquadFilter();
+                highShelfFilter.type = 'highshelf';
+                highShelfFilter.frequency.value = 2500; // Boost starts at 2500Hz
+                highShelfFilter.gain.value = claritySlider.value; // Connect to slider
+
+                // 4. Create the Safety Limiter (Compressor)
+                safetyLimiter = audioContext.createDynamicsCompressor();
+                safetyLimiter.threshold.value = -5; // Kick in near max volume
+                safetyLimiter.knee.value = 0;
+                safetyLimiter.ratio.value = 20; // Squash loud sounds hard
+                safetyLimiter.attack.value = 0.001; // React instantly (1ms)
+                safetyLimiter.release.value = 0.1;
+
+                // 5. Connect the audio graph: Mic -> Filter -> Limiter -> Headphones
+                microphone.connect(highShelfFilter);
+                highShelfFilter.connect(safetyLimiter);
+                safetyLimiter.connect(audioContext.destination);
+
+                // 6. Keep the screen awake
+                if (canWakeLock) {
+                    try {
+                        wakeLock = await navigator.wakeLock.request('screen');
+                    } catch (err) {
+                        console.log("Wake Lock failed:", err);
+                    }
+                }
+
+                // Update UI
+                isListening = true;
+                toggleBtn.textContent = "STOP LISTENING";
+                toggleBtn.classList.add("active");
+
+            } catch (err) {
+                alert("Microphone access denied or failed. Please check browser permissions.");
+                console.error(err);
+            }
+        }
+
+        function stopAudio() {
+            if (audioContext) {
+                audioContext.close(); // Shut down the audio engine
+            }
+            if (wakeLock !== null) {
+                wakeLock.release(); // Let the screen sleep again
+                wakeLock = null;
+            }
+            
+            isListening = false;
+            toggleBtn.textContent = "START LISTENING";
+            toggleBtn.classList.remove("active");
+        }
+
+        // Button Click Event
+        toggleBtn.addEventListener('click', () => {
+            if (!isListening) {
+                startAudio();
+            } else {
+                stopAudio();
+            }
+        });
+
+        // Slider Change Event (Updates the filter in real-time)
+        claritySlider.addEventListener('input', (event) => {
+            if (highShelfFilter) {
+                highShelfFilter.gain.value = event.target.value;
+            }
+        });
+    </script>
 </body>
 </html>
